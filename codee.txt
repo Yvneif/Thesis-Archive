@@ -1,0 +1,610 @@
+Step 1: Set Up the Project
+1.1 Install .NET SDK
+Download and install the .NET SDK (version 6.0 or later) from the official website:
+
+Download .NET SDK
+
+Verify the installation:
+
+bash
+Copy
+dotnet --version
+1.2 Install Node.js and npm
+Tailwind CSS requires Node.js and npm. Download and install Node.js (which includes npm):
+
+Download Node.js
+
+Verify the installation:
+
+bash
+Copy
+node -v
+npm -v
+1.3 Create a New ASP.NET Core Project
+Open a terminal and run the following commands:
+
+bash
+Copy
+dotnet new webapp -n ThesisArchive
+cd ThesisArchive
+1.4 Install Required NuGet Packages
+Run the following commands to install the necessary packages:
+
+bash
+Copy
+dotnet add package Microsoft.EntityFrameworkCore.Sqlite
+dotnet add package Microsoft.EntityFrameworkCore.Design
+dotnet add package Microsoft.AspNetCore.Identity.EntityFrameworkCore
+dotnet add package Microsoft.AspNetCore.Identity.UI
+dotnet add package Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore
+dotnet add package Microsoft.AspNetCore.DataProtection
+dotnet add package Microsoft.AspNetCore.Authentication
+dotnet add package Microsoft.AspNetCore.Authorization
+Step 2: Set Up the Database
+2.1 Create the Thesis Model
+Create a Models folder and add a Thesis.cs file:
+
+csharp
+Copy
+namespace ThesisArchive.Models
+{
+    public class Thesis
+    {
+        public int Id { get; set; }
+        public string Title { get; set; }
+        public string Author { get; set; }
+        public string Abstract { get; set; }
+        public string FilePath { get; set; } // Path to the thesis file
+        public DateTime Year { get; set; }
+    }
+}
+2.2 Create the ApplicationUser Model
+Create a Models/ApplicationUser.cs file:
+
+csharp
+Copy
+using Microsoft.AspNetCore.Identity;
+
+namespace ThesisArchive.Models
+{
+    public class ApplicationUser : IdentityUser
+    {
+        public string Name { get; set; }
+        public bool IsVerified { get; set; }
+    }
+}
+2.3 Create the Database Context
+Create a Data folder and add ApplicationDbContext.cs:
+
+csharp
+Copy
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using ThesisArchive.Models;
+
+namespace ThesisArchive.Data
+{
+    public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+    {
+        public DbSet<Thesis> Theses { get; set; }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder options)
+            => options.UseSqlite("Data Source=thesis.db");
+    }
+}
+2.4 Run Migrations
+Run the following commands to create and update the database:
+
+bash
+Copy
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+Step 3: Add Search and Sort Functionality
+3.1 Update the IndexModel Class
+Modify the Pages/Index.cshtml.cs file to handle search and sorting:
+
+csharp
+Copy
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
+using ThesisArchive.Data;
+using ThesisArchive.Models;
+using System.Linq;
+
+namespace ThesisArchive.Pages
+{
+    public class IndexModel : PageModel
+    {
+        private readonly ApplicationDbContext _context;
+
+        public IndexModel(ApplicationDbContext context)
+        {
+            _context = context;
+        }
+
+        public List<Thesis> Theses { get; set; } = new List<Thesis>();
+
+        [BindProperty(SupportsGet = true)]
+        public string SearchQuery { get; set; }
+
+        [BindProperty(SupportsGet = true)]
+        public string SortBy { get; set; }
+
+        public async Task OnGetAsync()
+        {
+            var thesesQuery = _context.Theses.AsQueryable();
+
+            // Search functionality
+            if (!string.IsNullOrEmpty(SearchQuery))
+            {
+                thesesQuery = thesesQuery.Where(t =>
+                    t.Title.Contains(SearchQuery) ||
+                    t.Author.Contains(SearchQuery) ||
+                    t.Abstract.Contains(SearchQuery));
+            }
+
+            // Sort functionality
+            switch (SortBy)
+            {
+                case "author":
+                    thesesQuery = thesesQuery.OrderBy(t => t.Author);
+                    break;
+                case "title":
+                    thesesQuery = thesesQuery.OrderBy(t => t.Title);
+                    break;
+                case "year":
+                    thesesQuery = thesesQuery.OrderBy(t => t.Year);
+                    break;
+                default:
+                    thesesQuery = thesesQuery.OrderBy(t => t.Title);
+                    break;
+            }
+
+            Theses = await thesesQuery.ToListAsync();
+        }
+    }
+}
+3.2 Update the Index.cshtml File
+Modify the Pages/Index.cshtml file to include the search and sort UI:
+
+html
+Copy
+@page
+@model ThesisArchive.Pages.IndexModel
+@{
+    ViewData["Title"] = "Home";
+}
+
+<div class="bg-gradient-to-r from-blue-500 to-purple-600 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl font-bold text-white mb-8">Thesis Archive</h1>
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <!-- Search and Sort Form -->
+            <form method="get" class="flex justify-between items-center mb-6">
+                <input type="text" name="SearchQuery" value="@Model.SearchQuery" placeholder="Search by keywords..." class="w-2/3 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select name="SortBy" class="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="this.form.submit()">
+                    <option value="title" selected="@(Model.SortBy == "title")">Sort by Title</option>
+                    <option value="author" selected="@(Model.SortBy == "author")">Sort by Author</option>
+                    <option value="year" selected="@(Model.SortBy == "year")">Sort by Year</option>
+                </select>
+            </form>
+
+            <!-- Thesis Results -->
+            <div id="results" class="space-y-4">
+                @foreach (var thesis in Model.Theses)
+                {
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                        <h3 class="text-xl font-bold text-blue-600">@thesis.Title</h3>
+                        <p class="text-gray-700">By: @thesis.Author</p>
+                        <p class="text-gray-600 mt-2">@thesis.Abstract</p>
+                        <a href="@thesis.FilePath" download class="inline-block mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition duration-300">Download</a>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript for Auto-Submit on Search -->
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const searchInput = document.querySelector('input[name="SearchQuery"]');
+        searchInput.addEventListener("input", function () {
+            this.form.submit();
+        });
+    });
+</script>
+Run HTML
+Step 4: Implement Secure File Uploads
+4.1 Create the Uploads Folder
+Create an uploads folder under wwwroot to store uploaded files:
+
+bash
+Copy
+mkdir wwwroot/uploads
+4.2 Update the Admin Dashboard
+Modify the Pages/Admin/Dashboard.cshtml file to handle file uploads securely:
+
+Pages/Admin/Dashboard.cshtml
+html
+Copy
+@page
+@model ThesisArchive.Pages.Admin.DashboardModel
+@{
+    ViewData["Title"] = "Admin Dashboard";
+}
+
+<div class="bg-gradient-to-r from-blue-500 to-purple-600 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl font-bold text-white mb-8">Admin Dashboard</h1>
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Add New Thesis</h2>
+            <form method="post" enctype="multipart/form-data" class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Title</label>
+                    <input type="text" name="Title" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Author</label>
+                    <input type="text" name="Author" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Abstract</label>
+                    <textarea name="Abstract" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required></textarea>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">File</label>
+                    <input type="file" name="File" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition duration-300">Add Thesis</button>
+            </form>
+        </div>
+        <div class="mt-8 bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Thesis List</h2>
+            <div class="space-y-4">
+                @foreach (var thesis in Model.Theses)
+                {
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                        <h3 class="text-xl font-bold text-blue-600">@thesis.Title</h3>
+                        <p class="text-gray-700">By: @thesis.Author</p>
+                        <p class="text-gray-600 mt-2">@thesis.Abstract</p>
+                        <form method="post" asp-page-handler="Delete" asp-route-id="@thesis.Id" class="mt-4">
+                            <button type="submit" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300">Delete</button>
+                        </form>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+Run HTML
+4.3 Add Backend Logic for Admin Dashboard
+Create a Dashboard.cshtml.cs file in the Pages/Admin folder:
+
+Pages/Admin/Dashboard.cshtml.cs
+csharp
+Copy
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
+using ThesisArchive.Data;
+using ThesisArchive.Models;
+using System.IO;
+using Microsoft.AspNetCore.Hosting;
+
+namespace ThesisArchive.Pages.Admin
+{
+    public class DashboardModel : PageModel
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly IWebHostEnvironment _environment;
+
+        public DashboardModel(ApplicationDbContext context, IWebHostEnvironment environment)
+        {
+            _context = context;
+            _environment = environment;
+        }
+
+        public List<Thesis> Theses { get; set; } = new List<Thesis>();
+
+        public async Task OnGetAsync()
+        {
+            Theses = await _context.Theses.ToListAsync();
+        }
+
+        public async Task<IActionResult> OnPostAsync(string Title, string Author, string Abstract, IFormFile File)
+        {
+            if (File == null || File.Length == 0)
+            {
+                ModelState.AddModelError("File", "Please upload a valid file.");
+                return Page();
+            }
+
+            var allowedExtensions = new[] { ".pdf", ".doc", ".docx" };
+            var fileExtension = Path.GetExtension(File.FileName).ToLower();
+            if (!allowedExtensions.Contains(fileExtension))
+            {
+                ModelState.AddModelError("File", "Only PDF, DOC, and DOCX files are allowed.");
+                return Page();
+            }
+
+            if (File.Length > 5 * 1024 * 1024) // 5 MB limit
+            {
+                ModelState.AddModelError("File", "File size must be less than 5 MB.");
+                return Page();
+            }
+
+            var filePath = Path.Combine(_environment.WebRootPath, "uploads", File.FileName);
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await File.CopyToAsync(stream);
+            }
+
+            var thesis = new Thesis
+            {
+                Title = Title,
+                Author = Author,
+                Abstract = Abstract,
+                FilePath = $"/uploads/{File.FileName}",
+                Year = DateTime.Now
+            };
+
+            _context.Theses.Add(thesis);
+            await _context.SaveChangesAsync();
+
+            return RedirectToPage();
+        }
+
+        public async Task<IActionResult> OnPostDeleteAsync(int id)
+        {
+            var thesis = await _context.Theses.FindAsync(id);
+            if (thesis != null)
+            {
+                var filePath = Path.Combine(_environment.WebRootPath, "uploads", Path.GetFileName(thesis.FilePath));
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Delete(filePath);
+                }
+
+                _context.Theses.Remove(thesis);
+                await _context.SaveChangesAsync();
+            }
+
+            return RedirectToPage();
+        }
+    }
+}
+Step 5: Add Role-Based Access Control
+5.1 Update Program.cs to Configure Roles
+Modify Program.cs to configure roles:
+
+csharp
+Copy
+using Microsoft.AspNetCore.Identity;
+using ThesisArchive.Data;
+using ThesisArchive.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddRazorPages();
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options => options.SignIn.RequireConfirmedAccount = true)
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddDefaultTokenProviders();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapRazorPages();
+
+// Create roles if they don't exist
+using (var scope = app.Services.CreateScope())
+{
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    string[] roleNames = { "Admin", "Student" };
+    foreach (var roleName in roleNames)
+    {
+        if (!await roleManager.RoleExistsAsync(roleName))
+        {
+            await roleManager.CreateAsync(new IdentityRole(roleName));
+        }
+    }
+}
+
+app.Run();
+5.2 Restrict Access to Admin Dashboard
+Add an [Authorize(Roles = "Admin")] attribute to the DashboardModel class:
+
+csharp
+Copy
+using Microsoft.AspNetCore.Authorization;
+
+[Authorize(Roles = "Admin")]
+public class DashboardModel : PageModel
+{
+    // Existing code...
+}
+Step 6: Add Email Verification
+6.1 Update Signup.cshtml.cs to Send Verification Emails
+Modify the Signup.cshtml.cs file to send verification emails:
+
+csharp
+Copy
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using System.Threading.Tasks;
+using ThesisArchive.Data;
+using ThesisArchive.Models;
+using System.Net.Mail;
+using System.Net;
+
+namespace ThesisArchive.Pages
+{
+    public class SignupModel : PageModel
+    {
+        private readonly UserManager<ApplicationUser> _userManager;
+
+        public SignupModel(UserManager<ApplicationUser> userManager)
+        {
+            _userManager = userManager;
+        }
+
+        [BindProperty]
+        public string Name { get; set; }
+
+        [BindProperty]
+        public string Email { get; set; }
+
+        [BindProperty]
+        public string Password { get; set; }
+
+        public void OnGet()
+        {
+        }
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+            var user = new ApplicationUser
+            {
+                UserName = Email,
+                Email = Email,
+                Name = Name,
+                IsVerified = false
+            };
+
+            var result = await _userManager.CreateAsync(user, Password);
+            if (result.Succeeded)
+            {
+                var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+                var confirmationLink = Url.Page("/VerifyEmail", pageHandler: null, values: new { userId = user.Id, token }, protocol: Request.Scheme);
+
+                SendVerificationEmail(Email, confirmationLink);
+
+                return RedirectToPage("/VerifyEmail", new { email = Email });
+            }
+
+            foreach (var error in result.Errors)
+            {
+                ModelState.AddModelError(string.Empty, error.Description);
+            }
+
+            return Page();
+        }
+
+        private void SendVerificationEmail(string email, string confirmationLink)
+        {
+            var fromAddress = new MailAddress("your-email@example.com", "Thesis Archive");
+            var toAddress = new MailAddress(email);
+            const string subject = "Verify Your Email";
+            string body = $"Please verify your email by clicking the link below:\n\n{confirmationLink}";
+
+            var smtp = new SmtpClient
+            {
+                Host = "smtp.example.com", // Replace with your SMTP server
+                Port = 587,
+                EnableSsl = true,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential("your-email@example.com", "your-email-password")
+            };
+
+            using (var message = new MailMessage(fromAddress, toAddress)
+            {
+                Subject = subject,
+                Body = body
+            })
+            {
+                smtp.Send(message);
+            }
+        }
+    }
+}
+6.2 Create the Verify Email Page
+Create a VerifyEmail.cshtml file in the Pages folder:
+
+html
+Copy
+@page
+@model ThesisArchive.Pages.VerifyEmailModel
+@{
+    ViewData["Title"] = "Verify Email";
+}
+
+<div class="flex justify-center items-center h-screen bg-gradient-to-r from-blue-500 to-purple-600">
+    <div class="bg-white p-8 rounded-lg shadow-lg w-96">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Verify Email</h2>
+        <p class="text-gray-700 text-center">A verification link has been sent to <strong>@Model.Email</strong>. Please check your inbox.</p>
+    </div>
+</div>
+Run HTML
+6.3 Add Backend Logic for Email Verification
+Create a VerifyEmail.cshtml.cs file in the Pages folder:
+
+csharp
+Copy
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Identity;
+using ThesisArchive.Models;
+
+namespace ThesisArchive.Pages
+{
+    public class VerifyEmailModel : PageModel
+    {
+        private readonly UserManager<ApplicationUser> _userManager;
+
+        public VerifyEmailModel(UserManager<ApplicationUser> userManager)
+        {
+            _userManager = userManager;
+        }
+
+        [BindProperty(SupportsGet = true)]
+        public string Email { get; set; }
+
+        public void OnGet()
+        {
+        }
+
+        public async Task<IActionResult> OnGetAsync(string userId, string token)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user != null)
+            {
+                var result = await _userManager.ConfirmEmailAsync(user, token);
+                if (result.Succeeded)
+                {
+                    user.IsVerified = true;
+                    await _userManager.UpdateAsync(user);
+                    return RedirectToPage("/Login");
+                }
+            }
+
+            return RedirectToPage("/Error");
+        }
+    }
+}
+Step 7: Run the Application
+7.1 Start the Application
+Run the following command to start the application:
+
+bash
+Copy
+dotnet run
